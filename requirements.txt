@@ -5,6 +5,7 @@ numpy==2.5.3
 opencv-python==5.0.0.93
 packaging==26.3
 pillow==12.3.0
+PyAudio==0.2.14
 pycparser==3.0
 pygame==2.6.1
 pystray==0.19.5

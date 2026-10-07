@@ -8,6 +8,9 @@ SOUNDS_DIR = "sounds"
 AVATARS_DIR = os.path.join("assets", "avatars")
 CHAT_IMAGES_DIR = os.path.join("assets", "img")
 
+# Ruta por defecto: Documentos/OmniLan/recive
+DEFAULT_DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Documents", "OmniLan", "recive")
+
 DEFAULT_CONFIG = {
     "first_name": "",
     "last_name": "",
@@ -30,7 +33,9 @@ DEFAULT_CONFIG = {
     "font_family": "Segoe UI",
     "font_size": 13,
     "received_bubble_color": "#202B36",
-    "selection_color": "#7CEAF5"
+    "selection_color": "#7CEAF5",
+    "downloads_dir": DEFAULT_DOWNLOADS_DIR,
+    "ask_before_download": False
 }
 
 class ConfigManager:
@@ -47,9 +52,11 @@ class ConfigManager:
         if not os.path.exists(AVATARS_DIR):
             os.makedirs(AVATARS_DIR)
         os.makedirs(CHAT_IMAGES_DIR, exist_ok=True)
+        
+        downloads_folder = self.config.get("downloads_dir", DEFAULT_DOWNLOADS_DIR)
+        os.makedirs(downloads_folder, exist_ok=True)
 
     def set_chat_background(self, source_filepath):
-        """Copia el fondo y prepara su ruta relativa para guardar la configuración."""
         self._ensure_directories()
         filename = os.path.basename(source_filepath)
         destination = os.path.join(CHAT_IMAGES_DIR, filename)
@@ -65,6 +72,7 @@ class ConfigManager:
                     self.config.update(loaded)
             except Exception as e:
                 print(f"Error cargando {CONFIG_FILE}: {e}")
+        self._ensure_directories()
 
     def save_config(self):
         self._ensure_directories()

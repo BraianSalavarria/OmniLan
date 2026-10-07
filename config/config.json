@@ -1,6 +1,6 @@
 {
     "first_name": "Braian",
-    "last_name": "Salavarria notbook",
+    "last_name": "Salavarria net",
     "avatar_filename": "007-mujer-1.png",
     "master_volume": 1.0,
     "notification_volume": 1.0,
@@ -21,5 +21,8 @@
     "font_size": 14,
     "received_bubble_color": "#374151",
     "selection_color": "#2563EB",
-    "presence_sound_path": "sounds\\user_conected.mp3"
+    "downloads_dir": "D:/Migracion/Documentos/OnmiLan/recive",
+    "ask_before_download": false,
+    "presence_sound_path": "sounds\\user_conected.mp3",
+    "show_transfer_speed": true
 }

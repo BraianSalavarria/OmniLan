@@ -4,12 +4,276 @@ import tkinter as tk
 import os
 import pygame
 import wave
+import subprocess
+import sys
+import time
 from PIL import Image, ImageTk, ImageOps
 
 
-class ChatDisplay(ctk.CTkFrame):
-    """Área de mensajes con un fondo ajustado al tamaño visible del chat."""
+class FileCardWidget(ctk.CTkFrame):
+    """Widget de tarjeta de archivo compacto con ancho fijo, previsualización para ambos pares y colores seguros."""
+    def __init__(self, parent, file_id, file_name, file_size, file_path, is_mine, config_mgr, on_accept_download=None, on_cancel_download=None, bg_color=None):
+        super().__init__(parent, fg_color=bg_color, corner_radius=10, width=320)
+        self.file_id = file_id
+        self.file_name = file_name
+        self.file_size = file_size
+        self.file_path = file_path
+        self.is_mine = is_mine
+        self.config_mgr = config_mgr
+        self.on_accept_download = on_accept_download
+        self.on_cancel_download = on_cancel_download
+        self.is_canceled = False
 
+        self.last_bytes = 0
+        self.last_speed_time = time.time()
+        self.current_speed_str = ""
+        self.preview_btn = None
+
+        self.formatted_size = self._format_size(file_size)
+        self._build_ui()
+
+    def _format_size(self, size_bytes):
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+    def _format_speed(self, bytes_per_sec):
+        if bytes_per_sec < 1024:
+            return f"{bytes_per_sec:.0f} B/s"
+        elif bytes_per_sec < 1024 * 1024:
+            return f"{bytes_per_sec / 1024:.1f} KB/s"
+        elif bytes_per_sec < 1024 * 1024 * 1024:
+            return f"{bytes_per_sec / (1024 * 1024):.1f} MB/s"
+        else:
+            return f"{bytes_per_sec / (1024 * 1024 * 1024):.2f} GB/s"
+
+    def _build_ui(self):
+        txt_color = "#0B121C" if self.is_mine else "#D3DDE5"
+        sub_color = "#151E29" if self.is_mine else "#8796A5"
+
+        self.top_frame = ctk.CTkFrame(self, fg_color="transparent", width=300)
+        self.top_frame.pack(fill="x", padx=10, pady=(8, 2))
+
+        ext = os.path.splitext(self.file_name)[1].lower()
+        is_image = ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+
+        self._try_render_preview()
+
+        icon_text = "🖼️" if is_image else ("📦" if ext in [".zip", ".rar", ".7z", ".tar", ".gz"] else "📄")
+        
+        info_frame = ctk.CTkFrame(self.top_frame, fg_color="transparent", width=290)
+        info_frame.pack(fill="x", expand=True)
+
+        ctk.CTkLabel(
+            info_frame,
+            text=f"{icon_text} {self.file_name}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=txt_color,
+            anchor="w",
+            wraplength=280
+        ).pack(anchor="w", fill="x")
+
+        self.status_label = ctk.CTkLabel(
+            info_frame,
+            text=f"{self.formatted_size}",
+            font=ctk.CTkFont(size=10),
+            text_color=sub_color,
+            anchor="w",
+            wraplength=280
+        )
+        self.status_label.pack(anchor="w", fill="x")
+
+        self.progress_bar = ctk.CTkProgressBar(
+            self,
+            height=6,
+            progress_color="#0B121C" if self.is_mine else "#72EAB6"
+        )
+        self.progress_bar.set(0.0)
+        self.progress_bar.pack(fill="x", padx=10, pady=4)
+
+        self.actions_frame = ctk.CTkFrame(self, fg_color="transparent")
+        has_actions = False
+
+        if not self.is_mine and self.on_accept_download:
+            has_actions = True
+            self.accept_btn = ctk.CTkButton(
+                self.actions_frame,
+                text="Aceptar Descarga",
+                height=22,
+                fg_color="#72EAB6",
+                hover_color="#55D9F2",
+                text_color="#0B121C",
+                font=ctk.CTkFont(size=10, weight="bold"),
+                command=self._accept
+            )
+            self.accept_btn.pack(side="left", padx=(0, 4))
+
+        if self.is_mine and self.on_cancel_download:
+            has_actions = True
+            self.cancel_btn = ctk.CTkButton(
+                self.actions_frame,
+                text="Cancelar",
+                height=22,
+                fg_color="#EF4444",
+                hover_color="#DC2626",
+                text_color="white",
+                font=ctk.CTkFont(size=10, weight="bold"),
+                command=self._cancel
+            )
+            self.cancel_btn.pack(side="left")
+
+        if has_actions:
+            self.actions_frame.pack(fill="x", padx=10, pady=(2, 6))
+
+    def _try_render_preview(self):
+        """Intenta cargar y renderizar la vista previa si el archivo existe."""
+        if self.preview_btn is not None:
+            return
+
+        ext = os.path.splitext(self.file_name)[1].lower()
+        is_image = ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+
+        if is_image and self.file_path and os.path.exists(self.file_path):
+            try:
+                with Image.open(self.file_path) as img:
+                    img_copy = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), (160, 90), Image.Resampling.LANCZOS)
+                    preview = ctk.CTkImage(light_image=img_copy, dark_image=img_copy, size=(160, 90))
+                    # CORREGIDO: hover_color="transparent" evita el error TclError unknown color name ""
+                    self.preview_btn = ctk.CTkButton(
+                        self.top_frame,
+                        text="",
+                        image=preview,
+                        fg_color="transparent",
+                        hover_color="transparent",
+                        command=self.open_file
+                    )
+                    self.preview_btn.pack(anchor="w", pady=2)
+            except Exception:
+                pass
+
+    def _accept(self):
+        if self.on_accept_download:
+            if self.actions_frame.winfo_manager():
+                self.actions_frame.pack_forget()
+            self.on_accept_download()
+
+    def _cancel(self):
+        if self.on_cancel_download:
+            self.on_cancel_download()
+        self.mark_canceled()
+
+    def mark_canceled(self):
+        self.is_canceled = True
+        self.status_label.configure(text=f"{self.formatted_size} - Cancelado")
+        self.progress_bar.set(0.0)
+        if self.actions_frame.winfo_manager():
+            self.actions_frame.pack_forget()
+
+    def update_progress(self, current_bytes, total_bytes):
+        if self.is_canceled:
+            return
+
+        now = time.time()
+        dt = now - self.last_speed_time
+
+        if dt >= 1.0 or current_bytes >= total_bytes:
+            db = current_bytes - self.last_bytes
+            speed = db / dt if dt > 0 else 0
+            self.last_bytes = current_bytes
+            self.last_speed_time = now
+
+            if self.config_mgr.config.get("show_transfer_speed", True) and speed > 0:
+                self.current_speed_str = f" - {self._format_speed(speed)}"
+            else:
+                self.current_speed_str = ""
+
+        ratio = min(max(current_bytes / max(total_bytes, 1), 0.0), 1.0)
+        self.progress_bar.set(ratio)
+        pct = int(ratio * 100)
+        
+        state_str = "Enviando" if self.is_mine else "Descargando"
+        self.status_label.configure(
+            text=f"{state_str} {pct}% ({self._format_size(current_bytes)} / {self.formatted_size}){self.current_speed_str}"
+        )
+
+        if current_bytes >= total_bytes and total_bytes > 0:
+            btn_bg = "#0B121C" if self.is_mine else "#202B36"
+            btn_txt = "#72EAB6" if self.is_mine else "#7CEAF5"
+            self.status_label.configure(text=f"{self.formatted_size} - Completado")
+            self.progress_bar.pack_forget()
+            self._try_render_preview()
+            self._show_completed_actions(btn_bg, btn_txt)
+
+    def set_file_path(self, path):
+        self.file_path = path
+        self._try_render_preview()
+
+    def _show_completed_actions(self, btn_bg, btn_txt):
+        for w in self.actions_frame.winfo_children():
+            w.destroy()
+
+        ctk.CTkButton(
+            self.actions_frame,
+            text="Abrir Archivo",
+            height=22,
+            fg_color=btn_bg,
+            hover_color="#3A4A58",
+            text_color=btn_txt,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self.open_file
+        ).pack(side="left", padx=(0, 4))
+
+        ctk.CTkButton(
+            self.actions_frame,
+            text="Mostrar en carpeta",
+            height=22,
+            fg_color=btn_bg,
+            hover_color="#3A4A58",
+            text_color=btn_txt,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self.show_in_folder
+        ).pack(side="left")
+
+        if not self.actions_frame.winfo_manager():
+            self.actions_frame.pack(fill="x", padx=10, pady=(2, 6))
+
+    def open_file(self):
+        target = self.file_path
+        if target and os.path.exists(target):
+            try:
+                if sys.platform == "win32":
+                    os.startfile(target)
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", target])
+                else:
+                    subprocess.Popen(["xdg-open", target])
+            except Exception as e:
+                print(f"Error al abrir archivo: {e}")
+        else:
+            messagebox.showwarning("Archivo no encontrado", "No se encuentra el archivo en el sistema.", parent=self)
+
+    def show_in_folder(self):
+        target = self.file_path
+        if target and os.path.exists(target):
+            try:
+                if sys.platform == "win32":
+                    subprocess.Popen(f'explorer /select,"{os.path.normpath(target)}"')
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", "-R", target])
+                else:
+                    subprocess.Popen(["xdg-open", os.path.dirname(target)])
+            except Exception as e:
+                print(f"Error al mostrar carpeta: {e}")
+        else:
+            messagebox.showwarning("Archivo no encontrado", "No se encuentra la carpeta o el archivo especificado.", parent=self)
+
+
+class ChatDisplay(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self._rows = []
@@ -18,6 +282,7 @@ class ChatDisplay(ctk.CTkFrame):
         self._background = None
         self._background_photo = None
         self._background_size = None
+        self.file_cards = {}
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self._parent_canvas = tk.Canvas(self, bg="#202B36", highlightthickness=0, bd=0)
@@ -77,32 +342,33 @@ class ChatDisplay(ctk.CTkFrame):
         return "break"
 
     def add_message(self, *, is_mine, initials, avatar, content, msg_type,
-                    font, bubble_color, text_color, name_color, config_mgr):
-        """Dibuja cabecera y burbuja directamente sobre el fondo del chat."""
+                    font, bubble_color, text_color, name_color, config_mgr,
+                    file_id=None, file_name="", file_size=0, on_accept_download=None, on_cancel_download=None):
         canvas = self._parent_canvas
         scale = self._get_widget_scaling()
         tag = f"message_{len(self._rows)}"
         name_font = ctk.CTkFont(size=12, weight="bold")
         photo = None
+
         if avatar is not None:
-            avatar = avatar.resize((round(36 * scale), round(36 * scale)),
-                                   Image.Resampling.LANCZOS)
+            avatar = avatar.resize((round(36 * scale), round(36 * scale)), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(avatar, master=canvas)
             canvas.create_image(0, 0, image=photo, anchor="nw", tags=tag)
         else:
-            canvas.create_oval(0, 0, 36 * scale, 36 * scale,
-                               fill=name_color, outline="", tags=tag)
+            canvas.create_oval(0, 0, 36 * scale, 36 * scale, fill=name_color, outline="", tags=tag)
             canvas.create_text(18 * scale, 18 * scale, text=initials,
-                               font=name_font.create_scaled_tuple(scale),
-                               fill="#0B121C", tags=tag)
+                               font=name_font.create_scaled_tuple(scale), fill="#0B121C", tags=tag)
+
         name = canvas.create_text(44 * scale, 18 * scale, text=initials,
                                   anchor="w", fill=name_color,
                                   font=name_font.create_scaled_tuple(scale), tags=tag)
         header_width = max(36 * scale, canvas.bbox(name)[2])
         top = 40 * scale
         player = None
+        file_card = None
         window = None
         text = None
+
         if msg_type == "text":
             text = canvas.create_text(0, 0, text=content, anchor="nw",
                                       font=font.create_scaled_tuple(scale),
@@ -111,39 +377,77 @@ class ChatDisplay(ctk.CTkFrame):
             bounds = canvas.bbox(text)
             bubble_width = bounds[2] - bounds[0] + 24 * scale
             bubble_height = max(28 * scale, bounds[3] - bounds[1]) + 16 * scale
+
         elif msg_type == "audio":
-            player = AudioPlayerWidget(canvas, audio_path=content,
-                                       config_mgr=config_mgr, is_mine=is_mine,
-                                       bg_color=bubble_color)
+            player = AudioPlayerWidget(canvas, audio_path=content, config_mgr=config_mgr, is_mine=is_mine, bg_color=bubble_color)
             player.update_idletasks()
             bubble_width = player.winfo_reqwidth() + 4 * scale
             bubble_height = player.winfo_reqheight() + 4 * scale
+
+        elif msg_type == "file":
+            file_card = FileCardWidget(
+                canvas,
+                file_id=file_id,
+                file_name=file_name,
+                file_size=file_size,
+                file_path=content,
+                is_mine=is_mine,
+                config_mgr=config_mgr,
+                on_accept_download=on_accept_download,
+                on_cancel_download=on_cancel_download,
+                bg_color=bubble_color
+            )
+            file_card.update_idletasks()
+            bubble_width = file_card.winfo_reqwidth() + 4 * scale
+            bubble_height = file_card.winfo_reqheight() + 4 * scale
+            if file_id:
+                self.file_cards[file_id] = file_card
+
         else:
             bubble_width = bubble_height = 0
+
         width = max(header_width, bubble_width)
         left = width - bubble_width if is_mine else 0
+
         if text is not None:
             right, bottom = left + bubble_width, top + bubble_height
             radius = min(12 * scale, bubble_width / 2, bubble_height / 2)
-            # Solo la burbuja tiene relleno; el resto deja ver el fondo.
             canvas.create_polygon(
                 left + radius, top, right - radius, top, right, top,
                 right, top + radius, right, bottom - radius, right, bottom,
                 right - radius, bottom, left + radius, bottom, left, bottom,
                 left, bottom - radius, left, top + radius, left, top,
                 smooth=True, splinesteps=24, fill=bubble_color, outline="", tags=tag)
-            canvas.coords(text, left + 12 * scale,
-                          top + (bubble_height - (bounds[3] - bounds[1])) / 2)
+            canvas.coords(text, left + 12 * scale, top + (bubble_height - (bounds[3] - bounds[1])) / 2)
             canvas.tag_raise(text)
+
         elif player is not None:
-            window = canvas.create_window(left + 2 * scale, top + 2 * scale,
-                                           window=player, anchor="nw", tags=tag)
-        self._rows.append(dict(tag=tag, width=width, height=top + bubble_height,
-                               is_mine=is_mine, x=0, y=0, photo=photo,
-                               player=player, window=window, font=font,
-                               name_font=name_font))
+            window = canvas.create_window(left + 2 * scale, top + 2 * scale, window=player, anchor="nw", tags=tag)
+
+        elif file_card is not None:
+            window = canvas.create_window(left + 2 * scale, top + 2 * scale, window=file_card, anchor="nw", tags=tag)
+
+        row_data = dict(tag=tag, width=width, height=top + bubble_height,
+                        is_mine=is_mine, x=0, y=0, photo=photo,
+                        player=player, window=window, file_card=file_card, font=font,
+                        name_font=name_font)
+        self._rows.append(row_data)
         self._scroll_to_end = True
         self._schedule_layout()
+
+    def update_file_progress(self, file_id, current_bytes, total_bytes, save_path=None):
+        card = self.file_cards.get(file_id)
+        if card:
+            if save_path:
+                card.set_file_path(save_path)
+            card.update_progress(current_bytes, total_bytes)
+            self._schedule_layout()
+
+    def mark_file_canceled(self, file_id):
+        card = self.file_cards.get(file_id)
+        if card:
+            card.mark_canceled()
+            self._schedule_layout()
 
     def _schedule_layout(self, event=None):
         if self._layout_job is None:
@@ -153,12 +457,24 @@ class ChatDisplay(ctk.CTkFrame):
         self._layout_job = None
         canvas = self._parent_canvas
         width = max(1, canvas.winfo_width())
+        scale = self._get_widget_scaling()
+        top_offset = 40 * scale
         y = 6
+
         for row in self._rows:
+            if row.get("file_card") is not None:
+                card = row["file_card"]
+                card.update_idletasks()
+                bubble_width = card.winfo_reqwidth() + 4 * scale
+                bubble_height = card.winfo_reqheight() + 4 * scale
+                row["width"] = bubble_width
+                row["height"] = top_offset + bubble_height
+
             x = width - 5 - row["width"] if row["is_mine"] else 5
             canvas.move(row["tag"], x - row["x"], y - row["y"])
             row["x"], row["y"] = x, y
             y += row["height"] + 12
+
         canvas.configure(scrollregion=(0, 0, width, max(y, canvas.winfo_height())))
         if self._scroll_to_end:
             canvas.yview_moveto(1.0)
@@ -170,7 +486,10 @@ class ChatDisplay(ctk.CTkFrame):
             self._parent_canvas.delete(row["tag"])
             if row["player"] is not None:
                 row["player"].destroy()
+            if row.get("file_card") is not None:
+                row["file_card"].destroy()
         self._rows.clear()
+        self.file_cards.clear()
         self._schedule_layout()
 
     def destroy(self):
@@ -182,7 +501,6 @@ class ChatDisplay(ctk.CTkFrame):
 
 
 class AudioPlayerWidget(ctk.CTkFrame):
-    """Widget reproductor de notas de voz adaptado a la paleta OmniLan"""
     _current_playing_widget = None
 
     def __init__(self, parent, audio_path, config_mgr, is_mine=True, bg_color=None):
@@ -349,7 +667,6 @@ class AudioPlayerWidget(ctk.CTkFrame):
 
         if pygame.mixer.music.get_busy():
             pygame.mixer.music.set_volume(self._get_effective_volume())
-            
             self.current_pos += 0.1
             if self.current_pos > self.duration:
                 self.current_pos = self.duration
@@ -444,10 +761,14 @@ class SettingsDialog(ctk.CTkToplevel):
         self.tab_profile = self.tabview.add("Perfil")
         self.tab_audio = self.tabview.add("Audio")
         self.tab_design = self.tabview.add("Apariencia")
+        self.tab_downloads = self.tabview.add("Descargas")
+        self.tab_network = self.tabview.add("Red")
 
         self._build_profile_tab()
         self._build_audio_tab()
         self._build_design_tab()
+        self._build_downloads_tab()
+        self._build_network_tab()
 
         ctk.CTkButton(self, text="Aplicar y Guardar", fg_color="#72EAB6", hover_color="#55D9F2", text_color="#0B121C", font=ctk.CTkFont(weight="bold"), command=self.save).pack(pady=10)
 
@@ -738,7 +1059,7 @@ class SettingsDialog(ctk.CTkToplevel):
         paths = [os.path.join(backgrounds_dir, name)
                  for name in sorted(os.listdir(backgrounds_dir), key=str.casefold)
                  if name.lower().endswith(extensions)] if os.path.isdir(backgrounds_dir) else []
-        # Incluye el fondo actual y la imagen agregada antes de guardar.
+
         for path in (self.config_mgr.config.get("chat_background_path", ""),
                      self.selected_background):
             if path:
@@ -807,6 +1128,82 @@ class SettingsDialog(ctk.CTkToplevel):
             self.config_mgr.config["selection_color"] = color
             self.selection_color_btn.configure(fg_color=color)
 
+    def _build_downloads_tab(self):
+        ctk.CTkLabel(
+            self.tab_downloads,
+            text="📁 Directorio de Guardado",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#7CEAF5"
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        dir_frame = ctk.CTkFrame(self.tab_downloads, fg_color="transparent")
+        dir_frame.pack(fill="x", padx=15, pady=5)
+
+        self.downloads_path_label = ctk.CTkLabel(
+            dir_frame,
+            text=self.config_mgr.config.get("downloads_dir", ""),
+            font=ctk.CTkFont(size=11),
+            text_color="#8796A5",
+            wraplength=340,
+            anchor="w",
+            justify="left"
+        )
+        self.downloads_path_label.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkButton(
+            dir_frame,
+            text="Examinar...",
+            width=90,
+            fg_color="#202B36",
+            hover_color="#3A4A58",
+            text_color="#D3DDE5",
+            command=self._browse_downloads_dir
+        ).pack(side="right")
+
+        ctk.CTkFrame(self.tab_downloads, height=1, fg_color="#3A4A58").pack(fill="x", padx=10, pady=15)
+
+        ctk.CTkLabel(
+            self.tab_downloads,
+            text="⚙️ Opciones de Transferencia",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#7CEAF5"
+        ).pack(anchor="w", padx=10, pady=(2, 5))
+
+        self.ask_download_var = ctk.BooleanVar(value=self.config_mgr.config.get("ask_before_download", False))
+        ctk.CTkCheckBox(
+            self.tab_downloads,
+            text="Preguntar siempre dónde guardar antes de descargar",
+            variable=self.ask_download_var,
+            text_color="#D3DDE5",
+            fg_color="#7CEAF5"
+        ).pack(anchor="w", padx=15, pady=5)
+
+    def _browse_downloads_dir(self):
+        chosen_dir = filedialog.askdirectory(
+            parent=self,
+            title="Seleccionar carpeta de descargas",
+            initialdir=self.config_mgr.config.get("downloads_dir", "")
+        )
+        if chosen_dir:
+            self.downloads_path_label.configure(text=chosen_dir)
+
+    def _build_network_tab(self):
+        ctk.CTkLabel(
+            self.tab_network,
+            text="🌐 Monitor de Red y Transferencias",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#7CEAF5"
+        ).pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.show_speed_var = ctk.BooleanVar(value=self.config_mgr.config.get("show_transfer_speed", True))
+        ctk.CTkCheckBox(
+            self.tab_network,
+            text="Mostrar velocidad de envío y recepción de archivos en el chat",
+            variable=self.show_speed_var,
+            text_color="#D3DDE5",
+            fg_color="#7CEAF5"
+        ).pack(anchor="w", padx=15, pady=10)
+
     def save(self):
         fn = self.fn_entry.get().strip()
         ln = self.ln_entry.get().strip()
@@ -832,6 +1229,9 @@ class SettingsDialog(ctk.CTkToplevel):
             self.config_mgr.config["presence_sound_enabled"] = self.presence_sound_var.get()
             self.config_mgr.config["font_family"] = self.font_family_option.get()
             self.config_mgr.config["font_size"] = int(self.font_size_option.get())
+            self.config_mgr.config["downloads_dir"] = self.downloads_path_label.cget("text")
+            self.config_mgr.config["ask_before_download"] = self.ask_download_var.get()
+            self.config_mgr.config["show_transfer_speed"] = self.show_speed_var.get()
             self.config_mgr.save_config()
             self.on_update()
             self.destroy()

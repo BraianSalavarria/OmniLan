@@ -54,30 +54,3 @@ sounddevice==0.5.6
 soundfile==0.14.0
 typing_extensions==4.16.0
 ```
-## 📂 Estructura del Proyecto
-´´´
-Plaintext
-omnilan/
-│
-├── assets/                  # Recursos gráficos
-│   ├── avatars/             # Avatares predefinidos de usuario
-│   ├── ico/                 # Iconos de la aplicación (.ico)
-│   └── img/                 # Fondos e imágenes auxiliares
-│
-├── config/                  # Archivos de configuración persistente
-│   └── config.json
-│
-├── recordings/              # Almacenamiento temporal de notas de voz
-├── sounds/                  # Tonos y efectos de sonido de notificación
-│
-├── audio_engine.py          # Motor de llamadas de audio P2P (PyAudio)
-├── audio_recorder.py        # Grabador y normalizador de notas de voz
-├── config_manager.py        # Gestor de lectura/escritura de parámetros
-├── main.py                  # Ventana principal e integración del sistema
-├── network_engine.py        # Motor de red (Sockets UDP/TCP y presencia)
-├── notification_manager.py # Controlador de bandeja de sistema (System Tray)
-├── ui_components.py         # Componentes personalizados de interfaz gráfica
-├── video_engine.py          # Motor de transmisión y renderizado de video
-├── voice_call_engine.py     # Ventana e interfaz de llamadas de solo voz
-└── requirements.txt         # Lista de dependencias del proyecto
-´´´

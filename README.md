@@ -55,6 +55,7 @@ soundfile==0.14.0
 typing_extensions==4.16.0
 ```
 ## 📂 Estructura del Proyecto
+´´´
 Plaintext
 omnilan/
 │
@@ -79,3 +80,4 @@ omnilan/
 ├── video_engine.py          # Motor de transmisión y renderizado de video
 ├── voice_call_engine.py     # Ventana e interfaz de llamadas de solo voz
 └── requirements.txt         # Lista de dependencias del proyecto
+´´´

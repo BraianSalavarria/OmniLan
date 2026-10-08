@@ -7,6 +7,8 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 SOUNDS_DIR = "sounds"
 AVATARS_DIR = os.path.join("assets", "avatars")
 CHAT_IMAGES_DIR = os.path.join("assets", "img")
+RECORDINGS_DIR = "recordings"
+RECORDED_SOUNDS_DIR = "recorded_sounds"
 
 # Ruta por defecto: Documentos/OmniLan/recive
 DEFAULT_DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Documents", "OmniLan", "recive")
@@ -45,16 +47,29 @@ class ConfigManager:
         self.load_config()
 
     def _ensure_directories(self):
-        if not os.path.exists(CONFIG_DIR):
-            os.makedirs(CONFIG_DIR)
-        if not os.path.exists(SOUNDS_DIR):
-            os.makedirs(SOUNDS_DIR)
-        if not os.path.exists(AVATARS_DIR):
-            os.makedirs(AVATARS_DIR)
+        """Asegura la existencia de directorios del sistema y valida la ruta de descargas."""
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        os.makedirs(SOUNDS_DIR, exist_ok=True)
+        os.makedirs(AVATARS_DIR, exist_ok=True)
         os.makedirs(CHAT_IMAGES_DIR, exist_ok=True)
-        
+        os.makedirs(RECORDINGS_DIR, exist_ok=True)
+        os.makedirs(RECORDED_SOUNDS_DIR, exist_ok=True)
+
+        # Validar y crear la carpeta de descargas configurada
         downloads_folder = self.config.get("downloads_dir", DEFAULT_DOWNLOADS_DIR)
-        os.makedirs(downloads_folder, exist_ok=True)
+
+        try:
+            os.makedirs(downloads_folder, exist_ok=True)
+            if not os.path.exists(downloads_folder):
+                raise FileNotFoundError(f"Ruta inaccesible: {downloads_folder}")
+        except (FileNotFoundError, OSError, PermissionError) as e:
+            print(f"[ConfigManager] La ruta configurada '{downloads_folder}' no es válida en este equipo ({e}). Restableciendo a ruta por defecto.")
+            downloads_folder = DEFAULT_DOWNLOADS_DIR
+            self.config["downloads_dir"] = downloads_folder
+            os.makedirs(downloads_folder, exist_ok=True)
+            # Guardamos la corrección si el archivo JSON ya existía previamente
+            if os.path.exists(CONFIG_FILE):
+                self.save_config()
 
     def set_chat_background(self, source_filepath):
         self._ensure_directories()

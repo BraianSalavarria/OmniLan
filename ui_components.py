@@ -143,7 +143,6 @@ class FileCardWidget(ctk.CTkFrame):
                 with Image.open(self.file_path) as img:
                     img_copy = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), (160, 90), Image.Resampling.LANCZOS)
                     preview = ctk.CTkImage(light_image=img_copy, dark_image=img_copy, size=(160, 90))
-                    # CORREGIDO: hover_color="transparent" evita el error TclError unknown color name ""
                     self.preview_btn = ctk.CTkButton(
                         self.top_frame,
                         text="",
@@ -725,8 +724,15 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, config_mgr, on_update):
         super().__init__(parent)
         self.title("OmniLan - Configuración")
-        self.geometry("560x760")
-        self.resizable(False, False)
+        
+        # Tamaño inicial compacto compatible con pantallas chicas (netbooks Juana Manso)
+        self.geometry("520x540")
+        
+        # Permitir redimensionar con límites razonables
+        self.resizable(True, True)
+        self.minsize(480, 420)
+        self.maxsize(650, 750)
+        
         self.configure(fg_color="#0B121C")
         self.config_mgr = config_mgr
         self.on_update = on_update
@@ -744,10 +750,9 @@ class SettingsDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
 
+        # Tabview adaptativo que ocupa el espacio disponible pero deja ver el botón inferior
         self.tabview = ctk.CTkTabview(
             self,
-            width=520,
-            height=670,
             fg_color="#151E29",
             segmented_button_fg_color="#202B36",
             segmented_button_selected_color="#7CEAF5",
@@ -756,13 +761,13 @@ class SettingsDialog(ctk.CTkToplevel):
             segmented_button_unselected_hover_color="#3A4A58",
             text_color="#0B121C"
         )
-        self.tabview.pack(padx=20, pady=10)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
-        self.tab_profile = self.tabview.add("Perfil")
-        self.tab_audio = self.tabview.add("Audio")
-        self.tab_design = self.tabview.add("Apariencia")
-        self.tab_downloads = self.tabview.add("Descargas")
-        self.tab_network = self.tabview.add("Red")
+        self.tab_profile = self._create_scrollable_tab("Perfil")
+        self.tab_audio = self._create_scrollable_tab("Audio")
+        self.tab_design = self._create_scrollable_tab("Apariencia")
+        self.tab_downloads = self._create_scrollable_tab("Descargas")
+        self.tab_network = self._create_scrollable_tab("Red")
 
         self._build_profile_tab()
         self._build_audio_tab()
@@ -770,7 +775,24 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_downloads_tab()
         self._build_network_tab()
 
-        ctk.CTkButton(self, text="Aplicar y Guardar", fg_color="#72EAB6", hover_color="#55D9F2", text_color="#0B121C", font=ctk.CTkFont(weight="bold"), command=self.save).pack(pady=10)
+        # Botón siempre visible en la parte inferior de la ventana
+        ctk.CTkButton(
+            self,
+            text="Aplicar y Guardar",
+            fg_color="#72EAB6",
+            hover_color="#55D9F2",
+            text_color="#0B121C",
+            font=ctk.CTkFont(weight="bold"),
+            height=32,
+            command=self.save
+        ).pack(pady=(5, 10))
+
+    def _create_scrollable_tab(self, tab_name):
+        """Crea una pestaña con contenedor scrolleable interno para evitar desbordes en pantallas pequeñas."""
+        tab = self.tabview.add(tab_name)
+        scroll_frame = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll_frame.pack(fill="both", expand=True)
+        return scroll_frame
 
     def _build_profile_tab(self):
         ctk.CTkLabel(self.tab_profile, text="Datos del Usuario", font=ctk.CTkFont(size=13, weight="bold"), text_color="#7CEAF5").pack(anchor="w", padx=10, pady=(10, 5))
@@ -787,7 +809,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(self.tab_profile, text="Selecciona tu Avatar", font=ctk.CTkFont(size=13, weight="bold"), text_color="#7CEAF5").pack(anchor="w", padx=10, pady=(2, 5))
 
-        avatars_scroll = ctk.CTkScrollableFrame(self.tab_profile, width=460, height=220, fg_color="#202B36")
+        avatars_scroll = ctk.CTkScrollableFrame(self.tab_profile, height=180, fg_color="#202B36")
         avatars_scroll.pack(fill="x", padx=15, pady=2)
 
         avatars_dir = os.path.join("assets", "avatars")
@@ -1033,7 +1055,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color="#7CEAF5").pack(anchor="w", padx=10, pady=(2, 5))
 
         self.backgrounds_scroll = ctk.CTkScrollableFrame(
-            self.tab_design, width=460, height=180, fg_color="#202B36")
+            self.tab_design, height=160, fg_color="#202B36")
         self.backgrounds_scroll.pack(fill="x", padx=15, pady=2)
         self.background_buttons = {}
         self.selected_background = self.config_mgr.config.get("chat_background_path", "")
